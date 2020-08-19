@@ -33,7 +33,7 @@ Example layout:
 
 """
 
-class MangaReaderScraper(ABC):
+class MangaReaderScraper:
     
     # Class name identifier for search results
     CLS_NAME_FIRST_SEARCH_RESULT = "d57"
@@ -42,7 +42,7 @@ class MangaReaderScraper(ABC):
                              'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/'
                              '50.0.2661.102 Safari/537.36'}
 
-    @abstractmethod
+
     def __init__(self, url, series, chapter):
         self.url = url
         self.chapter_url = f"{url}/{series}/{chapter}"
@@ -221,20 +221,13 @@ class MangaReaderScraper(ABC):
         os.mkdir(f"series/{self.series}/{self.chapter}/pages")
 
 
-# Inherits from MangaReaderScraper
-
-class MangaChapter(MangaReaderScraper):
-    def __init__(self, url="https://www.mangareader.net", series="dragonball", chapter=1):
-        super().__init__(url, series, chapter)
-    def get_chapters(self):
-        # TODO: Allow ability to download multiple chapters.
-        pass
-    
-
 def main(series_name, chapter):
-    o = MangaChapter(series=series_name, chapter=chapter)  # Instantiate scraper class   
-    o.search_series()                                      # Validate series name provided
-    o.get_pages()                                          # Download chapter pages
+    # Instantiate scraper class   
+    o = MangaReaderScraper(url="https://www.mangareader.net", series=series_name, chapter=chapter)
+    # Validate series name provided
+    o.search_series()
+    # Download chapter pages
+    o.get_pages()
 
 
 if __name__ == '__main__':
