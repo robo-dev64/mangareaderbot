@@ -36,27 +36,34 @@ class MangaReaderScraper:
     
     # Class name identifier for search results
     CLS_NAME_SEARCH_RESULT = "d57"
-    # Class name identifier for unordered list containing latest chapters.
-    CLS_NAME_UL_LATEST_CHAPTER = "d44"
+    # XPATH for hyperlink to chapters
+    XPATH_CLS_NAME_CHAPTERS = "//table[@class='d48']/descendant::i[contains(@class, 'd16 d45')]/../a"
+    # IMAGES XPATH
+    XPATH_CHAPTER_IMAGES = "//*[@class='mI']/img"
     # User agent header
     headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) '
                              'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/'
                              '50.0.2661.102 Safari/537.36'}
 
-    def __init__(self, url="https://www.mangareader.net", series=None, chapter=1):
+    def __init__(self, url="https://www.mangareader.tv", series=None, chapter=1):
         self.url = url
-        self.chapter_url = f"{url}/{series}/{chapter}"
+        self.chapter_url = f"{url}/chapter/{series}/chapter_{chapter}"
         self.img_link = None
         self.series = series
         self.chapter = chapter
-        self._list_of_series = []
-    
+        self.chapter_name = None
+        # List storing dictionaries of title/hyperlink
+        self._dictionary_of_series = {}
+        # List of series by title only
+        self._text_list_of_series = []
+        # Dictionary which will store chosen series chapters hyperlinks and text
+        self._chapter_dict = {}
        
     # Performs search and updates series name    
     def get_list_of_series(self):
         try:
             # Search for series
-            url_search = f"https://www.mangareader.net/search/?nsearch={self.series.lower()}&msearch="        
+            url_search = f"{self.url}/search/?w={self.series.lower()}&w="        
             # Send get request to page
             response = requests.get(url_search, headers=self.headers)
             # Create soup object, which will help parse html
@@ -66,25 +73,31 @@ class MangaReaderScraper:
 
             # If a match is found, provide results.
             if results:
-                # Create list of search results
-                list_of_results = [i.find("a")["href"][1:] for i in results]
-                # set search results to property
-                self._list_of_series = list_of_results
-
+               # Append dictionary of title and hyperlink            
+               for i in results:
+                   # Text content of manga series
+                   title = i.find("a").contents[0]
+                   # URL hyperlink
+                   hyperlink = i.find("a")["href"]
+                   # Append title/hyperlink to dict
+                   self._dictionary_of_series.update({title: hyperlink})
+                   # Append title to separate list for UI
+                   self._text_list_of_series.append(title)
+                
             else:
                 raise InvalidSeriesProvided
 
         except InvalidSeriesProvided:
             print('Unable to find series. Please check the series name you have provided and try again.')
 
-
-
     # Retrieves/downloads all pages for a chapter of a manga provided on MangaReader.net
     def get_pages(self, current_page=1):
         
         try:
             # Perform initial request to ensure series name is valid. If so, create directory
-            init_request = requests.get(f"{self.url}/{self.series}", headers=self.headers)
+            init_request = requests.get(f"{self.url}{self.chapter}", headers=self.headers)
+
+
             # Update directory path if status code is OK.
             if init_request.status_code == 200:
                 # Update local directory to store new series/chapter
@@ -96,29 +109,15 @@ class MangaReaderScraper:
             # Reset image link attribute if there was a prior error and the same chapter is selected.
             self.img_link = None
 
-            while True:
+            tree = html.fromstring(init_request.content)
+            pages = tree.xpath(self.XPATH_CHAPTER_IMAGES)
 
-                # Send get request to page
-                response = requests.get(f"{self.get_chapter_url}/{current_page}", headers=self.headers)
-                # Create soup object, which will help parse html
-                soup = BeautifulSoup(response.text, "html.parser")
-                # Get current image
-                current_page_img = soup.find("img", id="ci")["src"]
-                # If the image url has not changed, break loop
-                if current_page_img == self.img_link:
-                    print(f'Chapter {self.chapter} has finished downloading.')
-                    break
-                else:
-                    # Set img_link attribute
-                    self.img_link = current_page_img
-                    # download file using scraped image element url
-                    self.download_img('http:' + current_page_img, current_page)
-                    # iterate
-                    current_page += 1
-                    # continue loop
-                    continue
+            page_num = 1
+            # Loop through all pages in chapter, and download each image
+            for img in pages:
+                self.download_img(img.attrib['data-src'], page_num)
+                page_num += 1
 
-                 
 
         # Occurs on initial GET request to validate series selection
         except BadStatusCodeError:
@@ -157,35 +156,42 @@ class MangaReaderScraper:
             self.add_series_dir()
 
         # If the chapter exists within directory
-        if os.path.exists(f"series/{self.series}/{self.chapter}"):
+        if os.path.exists(f"series/{self.series}/{self.chapter_name}"):
             # Notify that the chapter exists within directory and is being removed.
             print('Chapter already exists. Removing.')
             # Remove chapter and contents from directory
-            shutil.rmtree(f"series/{self.series}/{self.chapter}")
+            shutil.rmtree(f"series/{self.series}/{self.chapter_name}")
 
         # Add chapter and pages to directory
         self.add_chapter_and_page_dir()
 
     """
-    get_number_of_chapters:
+    get_chapters_for_series:
 
-    Searches for the latest chapter element in the unordered list
-    for 'Latest Chapters', and retrieves the chapter number from
-    the 'href' attribute of that link.
+    Searches for the chapters related to series selected,
+    and updates _chapter_dict property with chapter key and hyperlink value.
 
     """
 
-    def get_number_of_chapters(self):
+    def get_chapters_for_series(self):
         try:
+
             # create url to search directly for series selected.
-            url_to_search = f"{self.url}/{self.series}"
+            url_to_search = f"{self.url}{self._dictionary_of_series[self.series]}"
             # Perform initial request to ensure series name is valid. If so, create directory
             series_search = requests.get(f"{url_to_search}", headers=self.headers)
+            # parse html
+            tree = html.fromstring(series_search.content)
             # Update directory path if status code is OK.
             if series_search.status_code == 200:
-                soup = BeautifulSoup(series_search.text, "html.parser")             
-                latest_chapter = [i.find("a")["href"] for i in soup.find(name="ul", class_=self.CLS_NAME_UL_LATEST_CHAPTER)][0].split('/')[-1]
-                return latest_chapter
+                # get chapters from parsed html      
+                chapters = tree.xpath(self.XPATH_CLS_NAME_CHAPTERS)
+                for chapter in chapters:
+                    # strip line characters and left spacing
+                    chapter_text = chapter.text.strip('\n').lstrip()
+                    # update _chapter_dict dictionary                
+                    self._chapter_dict.update({chapter_text: chapter.get("href")})
+
             else:
                 raise BadStatusCodeError
         except BadStatusCodeError:
@@ -199,7 +205,7 @@ class MangaReaderScraper:
         # file_format
         img_format = image_url.split('.')[-1]
         # path to download before replacing file name
-        file_path = os.path.join(os.getcwd(), f"series\\{self.series}\\{self.chapter}\\pages\\{page}.{img_format}")
+        file_path = os.path.join(os.getcwd(), f"series\\{self.series}\\{self.chapter_name}\\pages\\{page}.{img_format}")
         # send get request
         r = requests.get(image_url, stream=True)
 
@@ -240,17 +246,19 @@ class MangaReaderScraper:
         os.mkdir(f"series/{self.series}")
     # Adds chapter and pages to directory
     def add_chapter_and_page_dir(self):
-        os.mkdir(f"series/{self.series}/{self.chapter}")
-        os.mkdir(f"series/{self.series}/{self.chapter}/pages")
-
+        os.mkdir(f"series/{self.series}/{self.chapter_name}")
+        os.mkdir(f"series/{self.series}/{self.chapter_name}/pages")
+    @property
+    def get_chapters(self):
+        return self._chapter_dict
     @property
     def list_of_series(self):
-        return self._list_of_series
+        return self._dictionary_of_series
     @property
     def get_chapter_url(self):
         return f"{self.url}/{self.series}/{self.chapter}"
     def has_a_single_result(self):
-        return len(self._list_of_series) > 0
+        return len(self._dictionary_of_series) > 0
 
 
 

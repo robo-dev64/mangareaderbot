@@ -1,4 +1,5 @@
 from manga_dl.downloader import MangaReaderScraper
+from manga_dl import utils
 from tkinter import (Tk, Button, messagebox,
                      Entry, Toplevel, Listbox, Label,
                      Scrollbar, Frame, ttk)
@@ -77,10 +78,10 @@ class ChapterListWindow(BaseListMenu):
         self.scraper = manga_scraper_obj
         # listbox
         self.list_box = Listbox(self.frame, width=50, selectmode='single', yscrollcommand=self.scrollbar.set)
-        # add data to listbox
-        total_no_chapters = self.scraper.get_number_of_chapters()
-        # Add each chapter number to list box
-        [self.list_box.insert('end', i) for i in range(1, int(total_no_chapters) + 1)]
+        # Update scraper object with current list of chapters for series.
+        self.scraper.get_chapters_for_series()
+        # Add each chapter number to list box        
+        [self.list_box.insert('end', i) for i in self.scraper.get_chapters.keys()]
         # default selection to first index
         self.list_box.select_set(0)
         # set scrollbar view to listbox
@@ -95,11 +96,12 @@ class ChapterListWindow(BaseListMenu):
         self.list_box.pack(pady=15)
           
         # inner method for retrieving chapter image files
-        def get_chapter(self, chapter_chosen):
+        def get_chapter(self, chapter_chosen, chapter_text):
             try:
                                 
                 # Update chapter attribute
-                self.scraper.chapter = chapter_chosen       
+                self.scraper.chapter = chapter_chosen
+                self.scraper.chapter_name = utils.FileRenaming.strip_unwanted_characters(chapter_text)     
                 # Download image
                 LoadingBar(func=self.scraper.get_pages)
 
@@ -110,7 +112,7 @@ class ChapterListWindow(BaseListMenu):
         
 
         # OK Button
-        self.ok_btn = Button(self, text='OK', command=lambda: get_chapter(self, chapter_chosen=self.list_box.selection_get()))
+        self.ok_btn = Button(self, text='OK', command=lambda: get_chapter(self, chapter_chosen=self.scraper.get_chapters[self.list_box.selection_get()], chapter_text=self.list_box.selection_get()))
         self.ok_btn.pack(side='left', padx=(80,10), pady=10)
 
         # closes the current window and restores focus to the prior open window (in this instance, the series results)
@@ -134,7 +136,7 @@ class SearchResultsWindow(BaseListMenu):
         # listbox
         self.list_box = Listbox(self.frame, width=50, selectmode='single', yscrollcommand=self.scrollbar.set)
         # add data to listbox
-        self.list_box.insert('end', *manga_scraper_obj.list_of_series)
+        self.list_box.insert('end', *manga_scraper_obj._text_list_of_series)
         # default selection to first index
         self.list_box.select_set(0)
         # set scrollbar view to listbox
@@ -216,9 +218,9 @@ class MainMenu(Tk):
 
     # Open search results window
     def search_results(self):        
-        if self.manga_entry is not None: 
+        if self.manga_entry is not None:             
             # Create scraper object
-            m = MangaReaderScraper(url="https://www.mangareader.net", series=self.manga_entry.get(), chapter=1)
+            m = MangaReaderScraper(url="https://mangareader.tv", series=self.manga_entry.get(), chapter=1)
             # sets manga list property
             m.get_list_of_series()
             # Checks if there are no search results
